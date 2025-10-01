@@ -88,9 +88,6 @@
 #include <linux/ethtool.h>
 #include <linux/suspend.h>
 
-#ifndef NO_HDM_SUPPORT
-#include <linux/hdm.h>
-#endif
 #if defined (SEC_READ_MACADDR_SYSFS) || defined (SEC_WRITE_VERSION_IN_SYSFS) || defined (SEC_WRITE_SOFTAP_INFO_IN_SYSFS) || defined (SEC_CONFIG_PSM_SYSFS)
 #if defined(CONFIG_CNSS_OUT_OF_TREE)
 #include "cnss2.h"
@@ -15237,16 +15234,6 @@ void hdd_psoc_idle_timer_start(struct hdd_context *hdd_ctx)
 		hdd_info("pcie gen speed change requested");
 	}
 
-#ifndef NO_HDM_SUPPORT
-	/* SS PRD Appendix 75 - Wi-Fi control by Hypervisor Device Manager
-	 * if WIFI OFF requested by HMD, shutdown ASAP to void PCIE linkdown
-	 */
-	if (hdm_is_applied(HDM_WIFI)) {
-		timeout_ms = 1;
-		hdd_err("The idle_timeout has been changed to %d in HDM_WIFI shutdown",
-				timeout_ms);
-	}
-#endif
 	qdf_delayed_work_start(&hdd_ctx->psoc_idle_timeout_work, timeout_ms);
 	hdd_idle_timer_in_active(timeout_ms);
 }
@@ -20483,15 +20470,6 @@ static ssize_t wlan_hdd_state_ctrl_param_write(struct file *filp,
 		hdd_inform_wifi_off();
 		goto exit;
 	case WLAN_ON_STR:
-#ifndef NO_HDM_SUPPORT
-		/* SS PRD Appendix 75 - Wi-Fi control by Hypervisor Device Manager
-		 * if WIFI ON requested while HDM blocks PCIE, it must be ignored.
-		 */
-		if (hdm_is_applied(HDM_WIFI)) {
-			hdd_err("Wifi Turning On blocked by HDM\n");
-			return -EINVAL;
-		}
-#endif
 		hdd_info("Wifi Turning On from UI\n");
 		break;
 	case WLAN_WAIT_FOR_READY_STR:

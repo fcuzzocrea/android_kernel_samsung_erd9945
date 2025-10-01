@@ -2268,18 +2268,6 @@ static int cnss_do_recovery(struct cnss_plat_data *plat_priv,
 #ifdef CONFIG_SEC_SS_CNSS_FEATURE_SYSFS
 	cnss_pr_err("%s\n", ver_info);
 #endif
-#ifndef NO_HDM_SUPPORT
-	if (hdm_is_applied(HDM_WIFI))
-	{
-		cnss_pr_err("%s: device recovery as HDM blocks WIFI %d\n",
-				__func__, hdm_is_applied(HDM_WIFI));
-		/* RDDM or Linkdown should not occur becuase HDM blocks PCIE
-		 * after finishing shutdown. If the system crash calls here,
-		 * check shutdown has completed first.
-		 */
-		CNSS_ASSERT(0);
-	}
-#endif
 	plat_priv->recovery_count++;
 
 	if (plat_priv->device_id == QCA6174_DEVICE_ID)
@@ -5143,27 +5131,6 @@ int cnss_get_dump_inprogress(struct device *dev, uint8_t *val)
 
 EXPORT_SYMBOL(cnss_get_dump_inprogress);
 #endif /* CONFIG_SEC_SS_CNSS_FEATURE_SYSFS */
-#ifndef NO_HDM_SUPPORT
-static ssize_t cnss_hdm_load_module(struct kobject *kobj,
-			struct kobj_attribute *attr, const char *buf, size_t count)
-{
-
-	int hdm = 0;
-
-	if (sscanf(buf, "%du", &hdm) == 1) {
-		cnss_pr_info("%s: Enabling CNSS WLAN HW by HDM = %d\n", __func__, hdm);
-		if (cnss_wlan_hw_enable())
-			cnss_pr_err("%s: Fail to Enabling CNSS WLAN\n", __func__);
-	} else {
-		cnss_pr_err("%s: invaild hdm value = %d\n", __func__, hdm);
-	}
-
-	return count;
-}
-
-static struct kobj_attribute hdm_wlan_attr =
-	__ATTR(hdm_wlan_loader, 0660, NULL, cnss_hdm_load_module);
-#endif /* CNSS_SUPPORT_HDM */
 
 static int cnss_create_sysfs(struct cnss_plat_data *plat_priv)
 {
@@ -5182,11 +5149,6 @@ static int cnss_create_sysfs(struct cnss_plat_data *plat_priv)
 	sec_create_wifi_sysfs(plat_priv);
 	init_completion(&plat_priv->macloader_done);
 #endif /* CONFIG_SEC_SS_CNSS_FEATURE_SYSFS */
-#ifndef NO_HDM_SUPPORT
-	ret = sysfs_create_file(kernel_kobj, &hdm_wlan_attr.attr);
-	if (ret)
-		cnss_pr_err("Unable to create cnss HDM sysfs file err");
-#endif
 
 	return 0;
 out:
@@ -5220,16 +5182,10 @@ static void cnss_remove_sysfs(struct cnss_plat_data *plat_priv)
 	complete_all(&plat_priv->macloader_done);
 #endif /* CONFIG_SEC_SS_CNSS_FEATURE_SYSFS */
 #if IS_ENABLED(CONFIG_CNSS_EXYNOS)
-#ifndef NO_HDM_SUPPORT
-	sysfs_remove_file(kernel_kobj,  &hdm_wlan_attr.attr);
-#endif
 	devres_release(&plat_priv->plat_dev->dev,
 		       devm_cnss_group_remove, devm_cnss_group_match,
 		       (void *)&cnss_attr_group);
 #else
-#ifndef NO_HDM_SUPPORT
-	sysfs_remove_file(kernel_kobj,  &hdm_wlan_attr.attr);
-#endif
 	WARN_ON(devres_release(&plat_priv->plat_dev->dev,
 			       devm_cnss_group_remove, devm_cnss_group_match,
 			       (void *)&cnss_attr_group));
@@ -5243,9 +5199,6 @@ static void cnss_remove_sysfs(struct cnss_plat_data *plat_priv)
 	sec_remove_wifi_sysfs(plat_priv);
 	complete_all(&plat_priv->macloader_done);
 #endif /* CONFIG_SEC_SS_CNSS_FEATURE_SYSFS */
-#ifndef NO_HDM_SUPPORT
-	sysfs_remove_file(kernel_kobj,  &hdm_wlan_attr.attr);
-#endif
 	devm_device_remove_group(&plat_priv->plat_dev->dev, &cnss_attr_group);
 }
 #endif
@@ -6199,12 +6152,6 @@ static int cnss_probe(struct platform_device *plat_dev)
 	if (ret)
 		goto deinit_misc;
 
-#ifndef NO_HDM_SUPPORT
-	if (hdm_is_applied(HDM_WIFI)) {
-		cnss_pr_err("Set CNSS_WLAN_HW_DISABLED as HDM blocks WIFI");
-		set_bit(CNSS_WLAN_HW_DISABLED, &plat_priv->driver_state);
-	}
-#endif
 #if IS_ENABLED(CONFIG_CNSS_EXYNOS)
 	cnss_init_clk_req_gpio(plat_priv);
 #endif

@@ -47,10 +47,6 @@
 #include "cnss_prealloc.h"
 #include "cnss_common.h"
 
-#ifndef NO_HDM_SUPPORT
-#include <linux/hdm.h>
-#endif
-
 #if IS_ENABLED(CONFIG_CNSS_EXYNOS)
 #include <linux/exynos-pci-ctrl.h>
 #include <linux/exynos-pci-noti.h>
