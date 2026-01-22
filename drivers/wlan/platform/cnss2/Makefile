@@ -25,7 +25,7 @@ endif
 
 ifeq ($(CONFIG_SOC_S5E9945),y)
 ccflags-y += -I-idirafter$(WLAN_PLATFORM_ROOT)/../kernel_modules/include/
-ccflags-y += -iquote-idirafter$(WLAN_PLATFORM_ROOT)/../kernel_modules/include/
+ccflags-y += -iquote$(WLAN_PLATFORM_ROOT)/../kernel_modules/include/
 ccflags-y += -I$(WLAN_PLATFORM_ROOT)/../kernel_modules/include/
 endif
 obj-$(CONFIG_CNSS2) += cnss2.o
