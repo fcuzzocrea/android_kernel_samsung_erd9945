@@ -37,6 +37,12 @@ source "drivers/net/wireless/st/Kconfig"
 source "drivers/net/wireless/ti/Kconfig"
 source "drivers/net/wireless/zydas/Kconfig"
 source "drivers/net/wireless/quantenna/Kconfig"
+if SOC_S5E8845
+source "drivers/net/wireless/scsc/Kconfig"
+endif
+if SOC_S5E9945
+source "drivers/net/wireless/pcie_scsc/Kconfig"
+endif
 
 config PCMCIA_RAYCS
 	tristate "Aviator/Raytheon 2.4GHz wireless support"

@@ -761,7 +761,7 @@ static void fuse_sync_fs_writes(struct fuse_conn *fc)
 	 */
 	atomic_dec(&bucket->count);
 
-	wait_event(bucket->waitq, atomic_read(&bucket->count) == 0);
+	fuse_wait_event(bucket->waitq, atomic_read(&bucket->count) == 0);
 
 	/* Drop temp count on descendant bucket */
 	fuse_sync_bucket_dec(new_bucket);
@@ -823,6 +823,9 @@ enum {
 	OPT_ROOT_BPF,
 	OPT_ROOT_DIR,
 	OPT_NO_DAEMON,
+#ifdef CONFIG_FUSE_PERF
+	OPT_PERF,
+#endif
 	OPT_ERR
 };
 
@@ -840,6 +843,9 @@ static const struct fs_parameter_spec fuse_fs_parameters[] = {
 	fsparam_u32	("root_bpf",		OPT_ROOT_BPF),
 	fsparam_u32	("root_dir",		OPT_ROOT_DIR),
 	fsparam_flag	("no_daemon",		OPT_NO_DAEMON),
+#ifdef CONFIG_FUSE_PERF
+	fsparam_string	("perf",		OPT_PERF),
+#endif
 	{}
 };
 
@@ -958,6 +964,15 @@ static int fuse_parse_param(struct fs_context *fsc, struct fs_parameter *param)
 		ctx->no_daemon = true;
 		ctx->fd_present = true;
 		break;
+
+#ifdef CONFIG_FUSE_PERF
+	case OPT_PERF:
+		if (ctx->perf_node_name)
+			return invalfc(fsc, "Multiple perf node name specified");
+		ctx->perf_node_name = param->string;
+		param->string = NULL;
+		break;
+#endif
 
 	default:
 		return -EINVAL;
@@ -1089,6 +1104,13 @@ void fuse_conn_put(struct fuse_conn *fc)
 		struct fuse_iqueue *fiq = &fc->iq;
 		struct fuse_sync_bucket *bucket;
 
+		fuse_perf_destroy(fc);
+#ifdef CONFIG_FUSE_WATCHDOG
+		if (fc->watchdog_thread) {
+			kthread_stop(fc->watchdog_thread);
+			put_task_struct(fc->watchdog_thread);
+		}
+#endif
 		if (IS_ENABLED(CONFIG_FUSE_DAX))
 			fuse_dax_conn_free(fc);
 		if (fiq->ops->release)
@@ -1481,6 +1503,13 @@ static void process_init_reply(struct fuse_mount *fm, struct fuse_args *args,
 		fc->conn_error = 1;
 	}
 
+#ifdef CONFIG_FUSE_WATCHDOG
+	fuse_daemon_watchdog_start(fc);
+#endif
+	fuse_perf_init(fc);
+
+	ST_LOG("<%s> dev = %u:%u  fuse Initialized",
+			__func__, MAJOR(fc->dev), MINOR(fc->dev));
 	fuse_set_initialized(fc);
 	wake_up_all(&fc->blocked_waitq);
 }
@@ -1536,6 +1565,9 @@ void fuse_send_init(struct fuse_mount *fm)
 	ia->args.force = true;
 	ia->args.nocreds = true;
 	ia->args.end = process_init_reply;
+
+	ST_LOG("<%s> dev = %u:%u  fuse send Initrequest",
+			__func__, MAJOR(fm->fc->dev), MINOR(fm->fc->dev));
 
 	if (unlikely(fm->fc->no_daemon) || fuse_simple_background(fm, &ia->args, GFP_KERNEL) != 0)
 		process_init_reply(fm, &ia->args, -ENOTCONN);
@@ -1670,6 +1702,9 @@ static void fuse_sb_defaults(struct super_block *sb)
 	sb->s_time_gran = 1;
 	sb->s_export_op = &fuse_export_operations;
 	sb->s_iflags |= SB_I_IMA_UNVERIFIABLE_SIGNATURE;
+#ifdef CONFIG_FREEZABLE_IN_LOOKUP
+	sb->s_iflags |= SB_I_FREEZABLE_IN_LOOKUP;
+#endif
 	if (sb->s_user_ns != &init_user_ns)
 		sb->s_iflags |= SB_I_UNTRUSTED_MOUNTER;
 	sb->s_flags &= ~(SB_NOSEC | SB_I_VERSION);
@@ -1849,6 +1884,9 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	fc->no_control = ctx->no_control;
 	fc->no_force_umount = ctx->no_force_umount;
 	fc->no_daemon = ctx->no_daemon;
+#ifdef CONFIG_FUSE_PERF
+	fc->perf_node_name = ctx->perf_node_name;
+#endif
 
 	err = -ENOMEM;
 	root = fuse_get_root_inode(sb, ctx->rootmode, ctx->root_bpf,
@@ -2297,9 +2335,13 @@ static int __init fuse_init(void)
 	if (res)
 		goto err_dev_cleanup;
 
-	res = fuse_ctl_init();
+	res = fuse_perf_proc_init();
 	if (res)
 		goto err_sysfs_cleanup;
+
+	res = fuse_ctl_init();
+	if (res)
+		goto err_perf_cleanup;
 
 #ifdef CONFIG_FUSE_BPF
 	res = fuse_bpf_init();
@@ -2316,6 +2358,8 @@ static int __init fuse_init(void)
  err_ctl_cleanup:
 	fuse_ctl_cleanup();
 #endif
+ err_perf_cleanup:
+	fuse_perf_proc_cleanup();
  err_sysfs_cleanup:
 	fuse_sysfs_cleanup();
  err_dev_cleanup:
@@ -2331,6 +2375,7 @@ static void __exit fuse_exit(void)
 	pr_debug("exit\n");
 
 	fuse_ctl_cleanup();
+	fuse_perf_proc_cleanup();
 	fuse_sysfs_cleanup();
 	fuse_fs_cleanup();
 #ifdef CONFIG_FUSE_BPF

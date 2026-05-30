@@ -1551,6 +1551,10 @@ out_map:
 	return 0;
 }
 
+#ifdef CONFIG_HUGEPAGE_POOL
+extern bool is_hugepage_avail_low_ok(void);
+#endif
+
 /*
  * Return true if we do MADV_FREE successfully on entire pmd page.
  * Otherwise, return false.
@@ -2997,6 +3001,11 @@ static unsigned long deferred_split_count(struct shrinker *shrink,
 {
 	struct pglist_data *pgdata = NODE_DATA(sc->nid);
 	struct deferred_split *ds_queue = &pgdata->deferred_split_queue;
+
+#ifdef CONFIG_HUGEPAGE_POOL
+	if (is_hugepage_avail_low_ok())
+		return 0;
+#endif
 
 #ifdef CONFIG_MEMCG
 	if (sc->memcg)

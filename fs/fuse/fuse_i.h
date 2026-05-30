@@ -35,6 +35,13 @@
 #include <linux/refcount.h>
 #include <linux/user_namespace.h>
 #include <linux/statfs.h>
+#include <linux/sched.h>
+
+#ifdef CONFIG_FUSE_SUPPORT_STLOG
+#include <linux/fslog.h>
+#else
+#define ST_LOG(fmt, ...)
+#endif
 
 #define FUSE_SUPER_MAGIC 0x65735546
 
@@ -473,6 +480,10 @@ struct fuse_req {
 
 	/** fuse_mount this request belongs to */
 	struct fuse_mount *fm;
+
+#ifdef CONFIG_FUSE_PERF
+	ktime_t dispatch_time;
+#endif
 };
 
 struct fuse_iqueue;
@@ -622,6 +633,10 @@ struct fuse_fs_context {
 
 	/* fuse_dev pointer to fill in, should contain NULL on entry */
 	void **fudptr;
+
+#ifdef CONFIG_FUSE_PERF
+	const char *perf_node_name;
+#endif
 };
 
 struct fuse_sync_bucket {
@@ -953,6 +968,15 @@ struct fuse_conn {
 
 	/** Protects passthrough_req */
 	spinlock_t passthrough_req_lock;
+
+#ifdef CONFIG_FUSE_WATCHDOG
+	struct task_struct *watchdog_thread;
+#endif
+
+#ifdef CONFIG_FUSE_PERF
+	const char *perf_node_name;
+	struct fuse_perf_struct *perf_struct;
+#endif
 };
 
 /*
@@ -1449,6 +1473,23 @@ void fuse_passthrough_release(struct fuse_passthrough *passthrough);
 ssize_t fuse_passthrough_read_iter(struct kiocb *iocb, struct iov_iter *to);
 ssize_t fuse_passthrough_write_iter(struct kiocb *iocb, struct iov_iter *from);
 ssize_t fuse_passthrough_mmap(struct file *file, struct vm_area_struct *vma);
+
+#define fuse_wait_event(wq, condition)					\
+	wait_event_state(wq, condition, (TASK_UNINTERRUPTIBLE|TASK_FREEZABLE))
+
+#define fuse_wait_event_killable(wq, condition)				\
+	wait_event_state(wq, condition, (TASK_KILLABLE|TASK_FREEZABLE))
+
+#define fuse_wait_event_killable_exclusive(wq, condition)		\
+({									\
+	int ___ret = 0;							\
+	might_sleep();							\
+	if (!(condition))						\
+		___ret = ___wait_event(wq, condition,			\
+				(TASK_KILLABLE|TASK_FREEZABLE),		\
+				1, 0, schedule());			\
+	___ret;								\
+})
 
 /* backing.c */
 
@@ -2092,5 +2133,40 @@ static inline int fuse_bpf_run(struct bpf_prog *prog, struct fuse_bpf_args *fba)
 })
 
 #endif /* CONFIG_FUSE_BPF */
+
+#ifdef CONFIG_FUSE_WATCHDOG
+/* watchdog.c */
+void fuse_daemon_watchdog_start(struct fuse_conn *fc);
+#endif
+
+#ifdef CONFIG_FUSE_PERF
+void fuse_perf_init(struct fuse_conn *fc);
+void fuse_perf_destroy(struct fuse_conn *fc);
+void fuse_perf_start_hook(struct fuse_req *req);
+void fuse_perf_end_hook(struct fuse_req *req);
+void fuse_perf_check_last_read(struct fuse_conn *fc);
+
+int fuse_perf_proc_init(void);
+void fuse_perf_proc_cleanup(void);
+#else
+static inline void fuse_perf_init(struct fuse_conn *fc) {}
+static inline void fuse_perf_destroy(struct fuse_conn *fc) {}
+static inline void fuse_perf_start_hook(struct fuse_req *req) {}
+static inline void fuse_perf_end_hook(struct fuse_req *req) {}
+static inline void fuse_perf_check_last_read(struct fuse_conn *fc) {}
+
+static inline int fuse_perf_proc_init(void) { return 0; }
+static inline void fuse_perf_proc_cleanup(void) {}
+#endif /* CONFIG_FUSE_PERF */
+
+static inline void fuse_sec_start_hook(struct fuse_req *req)
+{
+	fuse_perf_start_hook(req);
+}
+
+static inline void fuse_sec_end_hook(struct fuse_req *req)
+{
+	fuse_perf_end_hook(req);
+}
 
 #endif /* _FS_FUSE_I_H */

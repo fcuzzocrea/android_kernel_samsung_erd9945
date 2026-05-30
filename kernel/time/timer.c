@@ -52,6 +52,8 @@
 #include <asm/timex.h>
 #include <asm/io.h>
 
+#include <linux/sec_debug.h>
+
 #include "tick-internal.h"
 
 #define CREATE_TRACE_POINTS
@@ -1486,6 +1488,7 @@ static void call_timer_fn(struct timer_list *timer,
 			  unsigned long baseclk)
 {
 	int count = preempt_count();
+	unsigned int __maybe_unused pcount;
 
 #ifdef CONFIG_LOCKDEP
 	/*
@@ -1506,9 +1509,13 @@ static void call_timer_fn(struct timer_list *timer,
 	 */
 	lock_map_acquire(&lockdep_map);
 
+	secdbg_prep_preempt_count(PCHECK_TIMER_FN, pcount);
+
 	trace_timer_expire_entry(timer, baseclk);
 	fn(timer);
 	trace_timer_expire_exit(timer);
+
+	secdbg_check_preempt_count(PCHECK_TIMER_FN, pcount, fn);
 
 	lock_map_release(&lockdep_map);
 

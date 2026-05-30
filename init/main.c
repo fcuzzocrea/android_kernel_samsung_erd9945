@@ -108,8 +108,30 @@
 #include <asm/sections.h>
 #include <asm/cacheflush.h>
 
+#ifdef CONFIG_RKP
+#include <linux/rkp.h>
+#endif
+
+#ifdef CONFIG_KDP
+#include <linux/kdp.h>
+#endif
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/initcall.h>
+
+#if defined(CONFIG_KUNIT) && defined(CONFIG_CC_IS_GCC)
+#include <kunit/test.h>
+#endif
+
+#ifdef CONFIG_SECURITY_DEFEX
+#include <linux/defex.h>
+void __init __weak defex_load_rules(void) { }
+#endif
+
+#ifdef CONFIG_RKP_TEST
+extern int rkp_test_ready;
+extern u64 *ha1;
+#endif
 
 static int kernel_init(void *);
 
@@ -181,6 +203,10 @@ EXPORT_SYMBOL_GPL(static_key_initialized);
 unsigned int reset_devices;
 EXPORT_SYMBOL(reset_devices);
 
+#if 0 //def CONFIG_KDP_NS
+int __is_kdp_recovery __kdp_ro = 0;
+#endif
+
 static int __init set_reset_devices(char *str)
 {
 	reset_devices = 1;
@@ -215,8 +241,15 @@ static bool __init obsolete_checksetup(char *line)
 				pr_warn("Parameter %s is obsolete, ignored\n",
 					p->str);
 				return true;
-			} else if (p->setup_func(line + n))
-				return true;
+			} else {
+				int ret;
+
+				memblock_memsize_set_name(p->str);
+				ret = p->setup_func(line + n);
+				memblock_memsize_unset_name();
+				if (ret)
+					return true;
+			}
 		}
 		p++;
 	} while (p < __setup_end);
@@ -742,11 +775,20 @@ static int __init do_early_param(char *param, char *val,
 		    (strcmp(param, "console") == 0 &&
 		     strcmp(p->str, "earlycon") == 0)
 		) {
+			memblock_memsize_set_name(p->str);
 			if (p->setup_func(val) != 0)
 				pr_warn("Malformed early option '%s'\n", param);
+			memblock_memsize_unset_name();
 		}
 	}
 	/* We accept everything at this stage. */
+#if 0 //def CONFIG_KDP_NS
+	if ((strncmp(param, "bootmode", 9) == 0)) {
+		if ((strncmp(val, "2", 2) == 0))
+			__is_kdp_recovery = 1;
+	}
+#endif
+
 	return 0;
 }
 
@@ -1001,6 +1043,11 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 
 	/* trace_printk can be enabled here */
 	early_trace_init();
+	
+#ifdef CONFIG_KDP
+	// move to after, early_trace_init. cuz security_integrity_current failed
+	//kdp_enable = true;
+#endif
 
 	/*
 	 * Set up the scheduler prior starting any interrupts (such as the
@@ -1519,6 +1566,9 @@ static int __ref kernel_init(void *unused)
 	kgdb_free_init_mem();
 	exit_boot_config();
 	free_initmem();
+#ifdef CONFIG_KDP
+	kdp_init();
+#endif
 	mark_readonly();
 
 	/*
@@ -1536,8 +1586,20 @@ static int __ref kernel_init(void *unused)
 
 	if (ramdisk_execute_command) {
 		ret = run_init_process(ramdisk_execute_command);
-		if (!ret)
+		if (!ret) {
+#ifdef CONFIG_RKP
+			rkp_robuffer_init();
+			rkp_init();
+			rkp_deferred_init();
+#ifdef CONFIG_RKP_TEST
+			/*
+			if (rkp_test_ready)
+				uh_call(UH_APP_RKP, RKP_TEST_INIT, (u64)ha1, 0, 0, 0);
+				*/
+#endif
+#endif
 			return 0;
+		}
 		pr_err("Failed to execute %s (error %d)\n",
 		       ramdisk_execute_command, ret);
 	}
@@ -1623,6 +1685,10 @@ static noinline void __init kernel_init_freeable(void)
 
 	do_basic_setup();
 
+#if defined(CONFIG_KUNIT) && defined(CONFIG_CC_IS_GCC)
+	kunit_run_all_tests();
+#endif
+
 	wait_for_initramfs();
 	console_on_rootfs();
 
@@ -1645,4 +1711,7 @@ static noinline void __init kernel_init_freeable(void)
 	 */
 
 	integrity_load_keys();
+#ifdef CONFIG_SECURITY_DEFEX
+	defex_load_rules();
+#endif
 }

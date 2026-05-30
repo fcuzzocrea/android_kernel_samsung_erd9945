@@ -31,6 +31,10 @@ static void show_val_kb(struct seq_file *m, const char *s, unsigned long num)
 	seq_write(m, " kB\n", 4);
 }
 
+#ifdef CONFIG_HUGEPAGE_POOL
+extern unsigned long total_hugepage_pool_pages(void);
+#endif
+
 static int meminfo_proc_show(struct seq_file *m, void *v)
 {
 	struct sysinfo i;
@@ -150,6 +154,9 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		    global_node_page_state(NR_FILE_THPS));
 	show_val_kb(m, "FilePmdMapped:  ",
 		    global_node_page_state(NR_FILE_PMDMAPPED));
+#ifdef CONFIG_HUGEPAGE_POOL
+	show_val_kb(m, "HugepagePool:   ", total_hugepage_pool_pages());
+#endif
 #endif
 
 #ifdef CONFIG_CMA

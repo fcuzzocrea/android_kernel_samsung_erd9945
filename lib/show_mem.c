@@ -7,7 +7,14 @@
 
 #include <linux/mm.h>
 #include <linux/cma.h>
+#include <linux/vmalloc.h>
 #include <trace/hooks/mm.h>
+
+#define K(x) ((x) << (PAGE_SHIFT-10))
+
+#ifdef CONFIG_HUGEPAGE_POOL
+extern unsigned long total_hugepage_pool_pages(void);
+#endif
 
 void __show_mem(unsigned int filter, nodemask_t *nodemask, int max_zone_idx)
 {
@@ -42,6 +49,10 @@ void __show_mem(unsigned int filter, nodemask_t *nodemask, int max_zone_idx)
 #ifdef CONFIG_MEMORY_FAILURE
 	printk("%lu pages hwpoisoned\n", atomic_long_read(&num_poisoned_pages));
 #endif
+	pr_info("%s: %lu kB\n", "VmallocUsed", vmalloc_nr_pages() << (PAGE_SHIFT - 10));
 	trace_android_vh_show_mem(filter, nodemask);
+#ifdef CONFIG_HUGEPAGE_POOL
+	pr_info("%s: %lu kB\n", "HugepagePool", K(total_hugepage_pool_pages()));
+#endif
 }
 EXPORT_SYMBOL_GPL(__show_mem);

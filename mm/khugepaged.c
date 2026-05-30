@@ -2545,6 +2545,10 @@ static int khugepaged(void *none)
 
 static void set_recommended_min_free_kbytes(void)
 {
+#if 1
+	calculate_min_free_kbytes();
+	setup_per_zone_wmarks();
+#else
 	struct zone *zone;
 	int nr_zones = 0;
 	unsigned long recommended_min;
@@ -2592,6 +2596,7 @@ static void set_recommended_min_free_kbytes(void)
 
 update_wmarks:
 	setup_per_zone_wmarks();
+#endif
 }
 
 int start_stop_khugepaged(void)

@@ -124,12 +124,29 @@ struct page *dmabuf_page_pool_alloc(struct dmabuf_page_pool *pool)
 }
 EXPORT_SYMBOL_GPL(dmabuf_page_pool_alloc);
 
+#define HUGEPAGE_ORDER HPAGE_PMD_ORDER
+#define GB_TO_PAGES(x) ((x) << (30 - PAGE_SHIFT))
+
 void dmabuf_page_pool_free(struct dmabuf_page_pool *pool, struct page *page)
 {
+#ifdef CONFIG_HUGEPAGE_POOL
+	static bool did_check = false;
+	static bool is_huge_dram = false;
+
+	if (unlikely(!did_check)) {
+		is_huge_dram = totalram_pages() > GB_TO_PAGES(6) ? true : false;
+		did_check = true;
+	}
+#endif
 	if (WARN_ON(pool->order != compound_order(page)))
 		return;
 
-	dmabuf_page_pool_add(pool, page);
+#ifdef CONFIG_HUGEPAGE_POOL
+	if (is_huge_dram && pool->order == HUGEPAGE_ORDER)
+		__free_pages(page, HUGEPAGE_ORDER);
+	else
+#endif
+		dmabuf_page_pool_add(pool, page);
 }
 EXPORT_SYMBOL_GPL(dmabuf_page_pool_free);
 
@@ -244,7 +261,9 @@ static int dmabuf_page_pool_shrink(gfp_t gfp_mask, int nr_to_scan)
 	if (!nr_to_scan)
 		only_scan = 1;
 
-	mutex_lock(&pool_list_lock);
+	if (!mutex_trylock(&pool_list_lock))
+		return 0;
+
 	list_for_each_entry(pool, &pool_list, list) {
 		if (only_scan) {
 			nr_total += dmabuf_page_pool_do_shrink(pool,

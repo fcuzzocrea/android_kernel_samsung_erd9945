@@ -93,6 +93,10 @@
 #include <asm/tlb.h>
 #include <asm/tlbflush.h>
 
+#ifdef CONFIG_PAGE_BOOST_RECORDING
+#include <linux/io_record.h>
+#endif
+
 #include "pgalloc-track.h"
 #include "internal.h"
 #include "swap.h"
@@ -3838,6 +3842,8 @@ static vm_fault_t handle_pte_marker(struct vm_fault *vmf)
 	return VM_FAULT_SIGBUS;
 }
 
+static DECLARE_WAIT_QUEUE_HEAD(swapcache_wq);
+
 /*
  * We enter with non-exclusive mmap_lock (to exclude vma changes,
  * but allow concurrent faults), and pte mapped but not yet locked.
@@ -3850,6 +3856,7 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	struct folio *swapcache, *folio = NULL;
+	DECLARE_WAITQUEUE(wait, current);
 	struct page *page;
 	struct swap_info_struct *si = NULL;
 	rmap_t rmap_flags = RMAP_NONE;
@@ -3933,7 +3940,9 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 			 */
 			if (swapcache_prepare(entry)) {
 				/* Relax a bit to prevent rapid repeated page faults */
+				add_wait_queue(&swapcache_wq, &wait);
 				schedule_timeout_uninterruptible(1);
+				remove_wait_queue(&swapcache_wq, &wait);
 				goto out;
 			}
 			need_clear_cache = true;
@@ -4189,8 +4198,11 @@ unlock:
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 out:
 	/* Clear the swap cache pin for direct swapin after PTL unlock */
-	if (need_clear_cache)
+	if (need_clear_cache) {
 		swapcache_clear(si, entry);
+		if (waitqueue_active(&swapcache_wq))
+			wake_up(&swapcache_wq);
+	}
 	if (si)
 		put_swap_device(si);
 	return ret;
@@ -4204,8 +4216,11 @@ out_release:
 		folio_unlock(swapcache);
 		folio_put(swapcache);
 	}
-	if (need_clear_cache)
+	if (need_clear_cache) {
 		swapcache_clear(si, entry);
+		if (waitqueue_active(&swapcache_wq))
+			wake_up(&swapcache_wq);
+	}
 	if (si)
 		put_swap_device(si);
 	return ret;
@@ -4594,7 +4609,7 @@ vm_fault_t finish_fault(struct vm_fault *vmf)
 }
 
 static unsigned long fault_around_bytes __read_mostly =
-	rounddown_pow_of_two(65536);
+	rounddown_pow_of_two(CONFIG_FAULT_AROUND_BYTES);
 
 #ifdef CONFIG_DEBUG_FS
 static int fault_around_bytes_get(void *data, u64 *val)
@@ -4702,6 +4717,9 @@ static inline bool should_fault_around(struct vm_fault *vmf)
 
 static vm_fault_t do_read_fault(struct vm_fault *vmf)
 {
+#ifdef CONFIG_PAGE_BOOST_RECORDING
+	struct vm_area_struct *vma = vmf->vma;
+#endif
 	vm_fault_t ret = 0;
 
 	trace_android_vh_tune_fault_around_bytes(&fault_around_bytes);
@@ -4717,6 +4735,10 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 		ret = do_fault_around(vmf);
 		if (ret)
 			return ret;
+#ifdef CONFIG_PAGE_BOOST_RECORDING
+	} else if (vma->vm_ops->map_pages && fault_around_bytes >> PAGE_SHIFT == 1) {
+		record_io_info(vma->vm_file, vmf->pgoff, 1);
+#endif
 	} else {
 		trace_android_vh_do_read_fault(vmf, fault_around_bytes);
 	}

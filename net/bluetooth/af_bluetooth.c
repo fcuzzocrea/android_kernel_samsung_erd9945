@@ -70,8 +70,12 @@ static const char *const bt_slock_key_strings[BT_MAX_PROTO] = {
 
 void bt_sock_reclassify_lock(struct sock *sk, int proto)
 {
+	return;
+
+/* Block kernel panic code. [SSI-28970] - [ANDROID][B7R] DoS in bt_sock_create(.) due to improper hci_sock_create disable
 	BUG_ON(!sk);
 	BUG_ON(!sock_allow_reclassification(sk));
+*/
 
 	sock_lock_init_class_and_name(sk,
 				      bt_slock_key_strings[proto], &bt_slock_key[proto],

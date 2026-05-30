@@ -11,5 +11,7 @@ fuse-y := dev.o dir.o file.o inode.o control.o xattr.o acl.o readdir.o ioctl.o
 fuse-y += passthrough.o
 fuse-$(CONFIG_FUSE_DAX) += dax.o
 fuse-$(CONFIG_FUSE_BPF) += backing.o
+fuse-$(CONFIG_FUSE_WATCHDOG) += watchdog.o
+fuse-$(CONFIG_FUSE_PERF) += perf.o
 
 virtiofs-y := virtio_fs.o

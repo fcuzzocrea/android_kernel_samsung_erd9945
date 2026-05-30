@@ -698,9 +698,27 @@ static ssize_t show_##file_name				\
 	return sprintf(buf, "%u\n", policy->object);	\
 }
 
+#if IS_ENABLED(CONFIG_CPU_CAPACITY_FIXUP)
+extern char cpu_cap_fixup_target[TASK_COMM_LEN];
+#endif
 static ssize_t show_cpuinfo_max_freq(struct cpufreq_policy *policy, char *buf)
 {
 	unsigned int max_freq = policy->cpuinfo.max_freq;
+
+#if IS_ENABLED(CONFIG_CPU_CAPACITY_FIXUP)
+	if (strncmp(current->comm, cpu_cap_fixup_target, strnlen(current->comm, TASK_COMM_LEN)) == 0) {
+		struct cpufreq_policy *iter;
+		unsigned int left = UINT_MAX, right = 0;
+
+		for_each_active_policy(iter) {
+			left = min(left, iter->cpuinfo.max_freq);
+			right = max(right, iter->cpuinfo.max_freq);
+		}
+
+		if (max_freq != left)
+			max_freq = right;
+	}
+#endif
 
 	trace_android_rvh_show_max_freq(policy, &max_freq);
 	return sprintf(buf, "%u\n", max_freq);

@@ -62,7 +62,7 @@ static inline bool __get_fault_info(u64 esr, struct kvm_vcpu_fault_info *fault)
 	    (cpus_have_final_cap(ARM64_WORKAROUND_834220) ||
 	     (esr & ESR_ELx_FSC_TYPE) == FSC_PERM)) {
 		if (!__translate_far_to_hpfar(far, &hpfar))
-			return false;
+			hpfar = 0;
 	} else {
 		hpfar = read_sysreg(hpfar_el2);
 	}

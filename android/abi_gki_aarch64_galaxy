@@ -437,3 +437,5 @@
   watchdog_init_timeout
   watchdog_register_device
   watchdog_unregister_device
+  scsi_device_quiesce
+  scsi_device_resume

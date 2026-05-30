@@ -325,6 +325,8 @@ config DRM_VKMS
 
 source "drivers/gpu/drm/exynos/Kconfig"
 
+source "drivers/gpu/drm/samsung/dpu/Kconfig"
+
 source "drivers/gpu/drm/rockchip/Kconfig"
 
 source "drivers/gpu/drm/vmwgfx/Kconfig"
@@ -416,6 +418,8 @@ source "drivers/gpu/drm/gud/Kconfig"
 source "drivers/gpu/drm/solomon/Kconfig"
 
 source "drivers/gpu/drm/sprd/Kconfig"
+
+source "drivers/gpu/drm/samsung/gpu/sgpu/Kconfig"
 
 config DRM_HYPERV
 	tristate "DRM Support for Hyper-V synthetic video device"
@@ -527,3 +531,12 @@ config DRM_LIB_RANDOM
 config DRM_PRIVACY_SCREEN
 	bool
 	default n
+
+
+########## FOR KUNIT ##########
+
+config DRM_PANEL_MCD_COMMON_TEST
+    bool "KUnit test for exynos mcd-common-panel test"
+    depends on SEC_KUNIT
+    help
+      TODO: Describe config fully.

@@ -117,7 +117,7 @@ static inline u64 kvm_granule_size(u32 level)
 
 static inline bool kvm_level_supports_block_mapping(u32 level)
 {
-	return level >= KVM_PGTABLE_MIN_BLOCK_LEVEL;
+	return level >= KVM_PGTABLE_MIN_BLOCK_LEVEL + 1;
 }
 
 static inline bool kvm_pte_table(kvm_pte_t pte, u32 level)
